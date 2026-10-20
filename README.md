@@ -48,6 +48,3 @@ Run blackjack_analysis.Rmd in RStudio to reproduce the statistical analysis and 
 
 Limitations
 This is a simplified simulation, not a complete casino blackjack model. Results are subject to random variation, dependence between hands drawn from the same shoe, and simplified payout and dealer rules. The simulation does not guarantee real-world outcomes.
-
-Conclusion
-The analysis found that a stopping score of 16 produced the highest observed win rate, while 17 produced the best expected value. The project demonstrates how simulation and statistical analysis can be used to compare strategies and evaluate outcomes under uncertainty.
