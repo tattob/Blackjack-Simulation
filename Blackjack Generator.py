@@ -110,7 +110,7 @@ def play_hand():
         elif p.blackjack and dealer.tally() == 21:
             p.win = "Won"
         elif dealer.blackjack and p.tally() == 21:
-            p.win = "Tie"
+            p.win = "Lost"
 
         data.append({
             "hand_id": hand_id,
