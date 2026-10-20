@@ -1,0 +1,278 @@
+---
+title: "Blackjack Analysis"
+author: "Tatton Hensley"
+date: "2026-10-08"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+We built this simulation with a core idea, to check win rates and compare expected returns at different score limits for hitting. How we define "hit limit" is a score that the player will no longer receive cards when equal or greater to. This was done by setting up a simulation that primarily outputs whether a hand won, lost, or tied against the dealer and then running that simulation for 50,000 individual hands. We generated 50,000 results for each hit limit from a score of 10 to 21, totaling 600,000 total results. This simulation was designed with several assumptions made. We assumed that aces would always be treated as a score of eleven until your score surpasses 21, at which time any aces in your hand would be decreased to a 1 individually until either your score was under a 21 or you ran out of aces. Another assumption is the lack of ability to split hands. This may effect the results of this study, but it was decided that splitting was outside the scope of this study and may skew our results more if included. It is likely deserving a study of its own. Built into the simulation is a shoe made up of 8 decks, which is reshuffled when at roughly half played. This does add unnecessary uncertainty to our study, as the results within the same shoe are dependent on one another. We chose to design it this way to simulate blackjack closer, and come up with an overall data set that provides the overarching odds of specific strategies in real world situations, rather than a simulation that gives you perfectly equal odds of drawing any card at any time. We left doubling down out of our data, as it doesn't provide you with additional data about win rates.
+
+```{r}
+bjsim <- read.csv("C:/Users/tatto/Downloads/R Homework/Blackjack Project/BlackjackSimData.csv")
+```
+## Overall Rates
+```{r}
+wins_counts <- bjsim %>%
+  group_by(Hit.limit, Won) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = Won,
+    values_from = Count,
+    values_fill = 0
+  )
+```
+
+Now we have the winning data isolated.
+```{r}
+arrange(wins_counts)
+```
+
+
+
+
+```{r}
+win_calc <- function(data) {
+  data %>%
+    mutate(win_calc = Won / (Won + Lost + Tie)) %>%
+    select(Hit.limit, win_calc)}
+
+loss_calc <- function(data) {
+  data %>%
+    mutate(loss_calc = Lost / (Won + Lost + Tie)) %>%
+    select(Hit.limit, loss_calc)}
+win_odds <- win_calc(wins_counts)
+loss_odds <- loss_calc(wins_counts)
+
+
+arrange(win_odds)
+arrange(loss_odds)
+```
+
+The highest win rate is 41.63% at a hit limit of 16 and the highest loss is 82.99%
+at 21. We can determine the error at a 95% confidence interval by using the formula
+`+- 1.96sqrt(p(1-p)/n), which with an n of 50,000 gives you 41.91 +- .43% and
+82.20 +- .33%.
+
+
+If we assume an even weight for wins and losses, with a tie being worth zero,
+you can generate the expected return. This will be how much you expect to
+make off of every dollar you bet. Later we will see how this data changes when we
+introduce extra value for wins with a blackjack.
+
+```{r}
+bjsim <- bjsim %>%
+  mutate(weight = case_when(
+    Won == "Won" ~ 1,
+    Won == "Tie"  ~ 0,
+    Won == "Lost" ~ -1,
+    TRUE ~ NA_real_
+  ))
+```
+
+Using the weights we assigned , we can find the expected value per dollar of 
+your bet.
+```{r}
+ev1 <- bjsim %>%
+  group_by(`Hit.limit`) %>%
+  summarise(
+    EV = mean(weight, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+ev1
+
+ev_summary <- bjsim %>%
+  group_by(`Hit.limit`) %>%
+  summarise(
+    EV = mean(weight, na.rm = TRUE),
+    SD = sd(weight, na.rm = TRUE),
+    n = sum(!is.na(weight)),
+    SE = SD / sqrt(n),
+    Lower = EV - 1.96 * SE,
+    Upper = EV + 1.96 * SE,
+    .groups = "drop")
+
+ggplot(ev_summary, aes(x = `Hit.limit`, y = EV)) +
+  geom_line() +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = Lower, ymax = Upper),
+    width = 0.2
+  ) +
+  labs(
+    title = "Expected Value by Hit Limit",
+    x = "Hit Limit",
+    y = "Expected Value"
+  ) +
+  theme_minimal()
+```
+
+With error included, the best hit limit is 16 with 17 and 18 also as a possibility, losing you roughly 8c per dollar you bet.
+
+Next we will see how blackjack hands affect the scoring if we weight those wins 3/2.
+```{r}
+bjsim <- bjsim %>%
+  mutate(weight.bj = case_when(
+    Won == "Won" & BJ == "True" ~ 1.5,
+    Won == "Won" & BJ == "False" ~ 1,
+    Won == "Tie"  ~ 0,
+    Won == "Lost" ~ -1,
+    TRUE ~ NA_real_
+  ))
+```
+```{r}
+ev2 <- bjsim %>%
+  group_by(`Hit.limit`) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+ev2
+
+ev_summary2 <- bjsim %>%
+  group_by(`Hit.limit`) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    SD = sd(weight.bj, na.rm = TRUE),
+    n = sum(!is.na(weight.bj)),
+    SE = SD / sqrt(n),
+    Lower = EV - 1.96 * SE,
+    Upper = EV + 1.96 * SE,
+    .groups = "drop")
+
+ggplot(ev_summary2, aes(x = `Hit.limit`, y = EV)) +
+  geom_line() +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = Lower, ymax = Upper),
+    width = 0.2
+  ) +
+  labs(
+    title = "Expected Value With Blackjack Payout",
+    x = "Hit Limit",
+    y = "Expected Value"
+  ) +
+  theme_minimal()
+```
+
+There is a notable, though predictably linear, increase in the EV. The mean loss per dollar bet is 5.5c when your betting limit is 16.
+
+
+
+
+## Conditional Win Rates
+
+Next, we should consider what win rates are like when the dealer is showing a specific card.
+
+```{r}
+ev_summary3 <- bjsim %>%
+  mutate(Showing = if_else(Showing == 1, 11, Showing)) %>%
+  group_by(Showing) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    SD = sd(weight.bj, na.rm = TRUE),
+    n = sum(!is.na(weight.bj)),
+    SE = SD / sqrt(n),
+    Lower = EV - qt(0.975, df = n - 1) * SE,
+    Upper = EV + qt(0.975, df = n - 1) * SE,
+    .groups = "drop"
+  )
+
+ggplot(ev_summary3, aes(x = Showing, y = EV)) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_errorbar(
+    aes(ymin = Lower, ymax = Upper),
+    width = 0.2
+  ) +
+  labs(
+    title = "Expected Value by Up Card",
+    x = "Showing",
+    y = "Expected Value"
+  ) +
+  theme_minimal()
+ev3 <- bjsim %>%
+  mutate(Showing = if_else(Showing == 1, 11, Showing)) %>%
+  group_by(Showing) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+arrange(ev3)
+```
+
+These results are using the 3/2 weighted blackjack wins. The result of an EV of -.013 is significantly better than the surrounding data, but after investigating our methods, I don't see anything that could be affecting it that strongly.The overall win rates are low, but the highest EVs are on an up card of 4, 5, 6, or 7. If the dealer is showing an ace, your chances of winning fall significantly. 
+
+```{r}
+ev_summary4 <- bjsim %>%
+  mutate(Showing = if_else(Showing == 1, 11, Showing)) %>%
+  group_by(Showing, Hit.limit) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    SD = sd(weight.bj, na.rm = TRUE),
+    n = sum(!is.na(weight.bj)),
+    SE = SD / sqrt(n),
+    Lower = EV - qt(0.975, df = n - 1) * SE,
+    Upper = EV + qt(0.975, df = n - 1) * SE,
+    .groups = "drop"
+  )
+
+ggplot(ev_summary4, aes(x = Hit.limit, y = EV)) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_errorbar(
+    aes(ymin = Lower, ymax = Upper),
+    width = 0.2
+  ) +
+  facet_wrap(~ Showing) +
+  labs(
+    title = "Expected Value by Hit Limit and Dealer Upcard",
+    x = "Hit Limit",
+    y = "Expected Value"
+  ) +
+  theme_minimal()
+
+ev4 <- bjsim %>%
+  mutate(Showing = if_else(Showing == 1, 11, Showing)) %>%
+  group_by(Showing, Hit.limit) %>%
+  summarise(
+    EV = mean(weight.bj, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  group_by(Showing) %>%
+  slice_max(order_by = EV, n = 1, with_ties = TRUE) %>%
+  ungroup()
+ev4
+```
+The optimal hit limit does seem to fluctuate somewhat based on the card the dealer is showing. They range from 14 to 18 with a majority sitting around 17.
+
+So what is the maximum possible EV if we use the optimal hit limit from each showing card. If we average them out with the weight of a 1/13 chance of any card being the up card, which means a 4/13 chance that a card with the score of 10 is the up card.
+```{r}
+overall_ev <- ev4 %>%
+  mutate(
+    probability = if_else(Showing == 10, 4/13, 1/13)
+  ) %>%
+  summarise(
+    Weighted_EV = sum(EV * probability, na.rm = TRUE)
+  )
+
+overall_ev
+```
+If you use the optimal hit limits on each dealer up card, you end with a final EV of -.0305, losing 3.1c on every dollar you bet.
+
+## Summary
+The optimal hit limit overall is 16, with around a -.053 EV. The best hit limit for each dealer up card score is: 15 for 2, 16 for 3, 14 for 4, 14 for 5, 14 for 6, 17 for 7, 17 for 8, 18 for 9, 17 for 10, and 18 for an ace. The best dealer up card EVs was 6 with roughly -0.013, and the best EV when the optimal hit limits were included were 6 and 7, at 0.15 and 0.13. When you combine each dealer showing's optimal hit limits EV, weighted by their likeliness, you get a total EV of -0.0305.
+
